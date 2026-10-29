@@ -1,0 +1,28 @@
+# 统一换行：仓库内一律存 LF，避免 Windows / Linux 之间产生满屏 diff
+* text=auto
+
+# Windows 脚本保持 CRLF，避免在 PowerShell / cmd 下出现解析意外
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制文件不做换行转换、不参与文本 diff
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.pdf binary
+*.docx binary
+*.xlsx binary
+*.pptx binary
+*.zip binary
+*.apk binary
+*.aab binary
+*.keystore binary
+*.jks binary
+*.db binary

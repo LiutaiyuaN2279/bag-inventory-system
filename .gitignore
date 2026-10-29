@@ -1,0 +1,88 @@
+# ==================== Python / 后端 ====================
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# 演示数据库：可由 `python scripts/reset_demo_data.py` 一键重建，不入库
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite3
+
+# 上传归档（AI 识别原图等运行时产物，重置脚本会一并清理）
+backend/data/uploads/
+
+# 数据库备份（*.db 已忽略，但 app.db.bak-时间戳 这类要单独排除）
+backend/data/*.bak
+backend/data/*.bak-*
+*.bak
+*.bak-*
+
+# 环境变量（只提交 .env.example）
+.env
+.env.local
+.env.*.local
+
+# ==================== Node / 前端 ====================
+node_modules/
+dist/
+dist-ssr/
+.vite/
+.npm-cache/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.local
+
+# ==================== Android / APK ====================
+# Gradle 构建产物与本地配置：体积大、每次构建都变，不入库
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/captures/
+# 签名密钥库与密码文件：绝不入库（不要用 git add -f 绕过）
+*.jks
+*.keystore
+keystore.properties
+# Android 安装包走 GitHub Releases 分发，不入库（避免二进制 diff 撑大仓库）
+dist-apk/
+*.apk
+*.aab
+# APK 内嵌的前端资源：由 `npm run build:apk`（vite build + copy-dist.mjs）生成，
+# 每次前端改动都会整体变化，不入库；打包时由 build-apk.ps1 自动重建
+android/app/src/main/assets/www/
+
+# ==================== 编辑器 / 操作系统 ====================
+.idea/
+.vscode/
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# ==================== 临时文件 ====================
+# .tmp-run/  : 后端启动时把 TEMP/TMP 指到仓库内（本机系统 TEMP 对 Python 不可写，
+#              否则 SQLite 创建临时文件失败会报 `disk I/O error`）
+# .tmp-build: 前端 vite build 的临时目录（同样原因）
+.tmp-*/
+.tmp-build/
+.tmp-run/
+*.tmp
+*.log
