@@ -64,6 +64,21 @@ class Settings(BaseSettings):
     LOGIN_FAIL_WINDOW: int = 300
     LOGIN_LOCK_SECONDS: int = 300
 
+    # ---- GitHub 快捷登录（OAuth App）----
+    # 演示用途：用 GitHub 账号一键登录，免去记演示口令。留空 CLIENT_ID/SECRET
+    # 时登录页不会显示该按钮（enabled() 为 False），不影响原有账号登录。
+    #: 总开关：false 时即使填了凭证也不启用
+    GITHUB_OAUTH_ENABLED: bool = True
+    #: 在 https://github.com/settings/developers → OAuth Apps 新建应用后获得
+    GITHUB_CLIENT_ID: str = ""
+    GITHUB_CLIENT_SECRET: str = ""
+    #: 回调地址，必须与 OAuth App 里填的 Authorization callback URL 完全一致
+    GITHUB_REDIRECT_URI: str = "http://127.0.0.1:8000/api/v1/auth/github/callback"
+    #: 登录成功后回跳的前端地址（浏览器里的站点根地址，不带 #）
+    GITHUB_FRONTEND_URL: str = "http://127.0.0.1:5173"
+    #: GitHub 用户映射到本系统的角色：默认 admin，即登录后拥有全部权限
+    GITHUB_ADMIN_ROLE: str = "admin"
+
     @property
     def cors_origins_list(self) -> List[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]

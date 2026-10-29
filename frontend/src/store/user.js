@@ -34,6 +34,15 @@ export const useUserStore = defineStore('user', {
       setToken(this.token)
       return data
     },
+    /**
+     * 已经拿到 token 的登录方式（GitHub 快捷登录票据兑换）。
+     * 存下 token 后立刻拉一次用户信息，保证角色/权限状态与口令登录完全一致。
+     */
+    async loginWithToken(accessToken) {
+      this.token = accessToken
+      setToken(accessToken)
+      return this.getUserInfo()
+    },
     async getUserInfo() {
       const data = await userinfoApi()
       this.userInfo = data
