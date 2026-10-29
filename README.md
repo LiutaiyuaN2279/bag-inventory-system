@@ -51,7 +51,7 @@
 │   │   └── views/          # 页面
 │   ├── vite.config.js      # 别名 @ 与 /api 开发代理
 │   └── package.json
-├── docs/screenshots/       # 界面验收截图（1600×900）
+├── docs/screenshots/       # 界面验收截图（1600×900）+ 角色视野对照图（1440×900）
 ├── test_docs/              # AI 单据识别的测试样张（送货单图片）
 ├── .gitignore
 ├── 代码审查报告.md
@@ -222,6 +222,68 @@ npm run dev
 | `ai:ocr:config` | 管理大模型档案（新增 / 编辑 / 启用 / 测试 / 删除） | ✅ | — | — | — | — |
 
 > 模型档案里存的是**识别引擎的接口地址与 API Key**，属于敏感配置，所以 `ai:ocr:config` 只授予系统管理员：业务岗位只使用识别能力，看不到也改不了密钥。档案密钥在接口返回时脱敏（只留末 4 位），列表页也只展示脱敏值。
+
+### 4.3 角色视野与权限差异（实测）
+
+同一套后端接口、同一份数据，12 个演示账号登录后是 12 种界面 —— 这正是三级权限模型要演示的效果。差异出现在三个层面：
+
+| 层面 | 实现位置 | 表现 |
+| --- | --- | --- |
+| **菜单可见性** | 路由 `meta.permission` + 侧边栏按权限递归过滤（`router/guard.js`、`layout/index.vue`） | 销售部普通员工只看到 3 个模块，系统管理员看到 12 个 |
+| **页面内动作** | `v-permission` 指令 + 批量动作逐条鉴权（`api/_batch.py`） | 同一张请购单，`admin` / `manager` 有「批量审核 / 退回 / 作废」，`buyer` 只有「导出选中」 |
+| **数据范围** | `app/core/visibility.py` 的「全局 / 本部门 / 本人」三级视野，列表与详情同样过滤 | 运营主管看到全公司 10 张报销单，采购员与质检员各自只看到经手的 5 张 |
+
+**实测：逐账号登录后侧边栏真实渲染出的模块与页面数**（1440×900 无头 Edge，抓取 DOM，非人工统计）
+
+| 账号 | 角色 | 可见模块 | 可见页面 | 典型差异 |
+| --- | --- | --- | --- | --- |
+| `admin` | 系统管理员 | 12 | 33 | 唯一能看到「用户管理 / 角色权限管理 / 操作日志」的账号 |
+| `manager` | 运营主管（财务部） | 12 | 26 | 有智能审计；但库存无「盘点」、报销无「待制证 / 凭证复核 / 制度管理」、系统管理只剩「导入导出」 |
+| `finance` / `finmaker` | 财务复核员 / 制单员 | 11 | 22 | 业务数据全局只读 + 各自的制证 / 复核子菜单（职责分离） |
+| `gm` | 总经理 | 11 | 22 | 全局只读，但没有智能审计与操作日志 |
+| `buyer` | 采购员 | 8 | 16 | 没有生产 / 质量 / 报表 / 智能审计，采购四页全开 |
+| `keeper` | 仓管员 | 8 | 15 | 采购下只有「到货入库 / 采购退货」，库存五页全开（含盘点与预警） |
+| `qc` | 质检员 | 7 | 9 | 基础数据无「仓库管理」，采购下只有「到货入库」 |
+| `depthead` / `director` | 部门负责人 / 部门总监 | 4 | 6 | 采购下只有本部门「请购单」，报销只有「报销单 / 凭证列表」 |
+| `sales` / `tech` | 普通员工 | 3 | 6 | 只剩看板 + 基础数据 + 报销（填自己的单） |
+
+![角色视野对照：七个账号登录后的侧边栏并排](docs/screenshots/40-roles-menu-compare.png)
+
+三张对照图都在 `docs/screenshots/`，是无头 Edge 逐账号登录实拍后拼接的：
+
+1. **菜单对照**（`40-roles-menu-compare.png`）：7 个账号的侧边栏并排，模块数与页面数直接标在列头，一眼能看出「权限收窄」发生在哪一级。
+2. **首页看板对照**（`41-roles-dashboard-compare.png`）：同一个 `GET /reports/workbench`，系统管理员拿到全局口径（7 类待办、16 个快捷入口、近 7 天出入库趋势），采购员换成采购口径（3 类待办、9 个入口、采购到货数量/金额图），销售部普通员工只剩基础数据（0 类待办、3 个入口，主图表与「与我相关的单据」为空）。
+
+![角色视野对照：首页看板按角色推送不同数据](docs/screenshots/41-roles-dashboard-compare.png)
+
+3. **数据范围对照**（`42-roles-reimburse-scope-compare.png`）：同一张费用报销单表，运营主管看到全公司 10 张，采购员与质检员各看到自己经手的 5 张 —— 差异发生在 SQL 过滤条件，而不是前端隐藏。
+
+![数据范围对照：同一张报销单表的三种可见范围](docs/screenshots/42-roles-reimburse-scope-compare.png)
+
+> 越权不只是「看不见」：前端不渲染入口，直接请求后端接口同样会被 `require_permissions` 拦下并返回 `40300 无操作权限`。两侧都要过关，才算完整的功能权限控制。
+>
+> 想自己复现这组对照：登录任一账号后用顶栏右上角的「切换演示身份」逐个切换即可，菜单会按新角色即时重算。
+
+### 4.4 GitHub 快捷登录（可选）
+
+把演示地址发给别人体验时，登录页可以在配置了 GitHub OAuth App 之后多出一个「使用 GitHub 登录」按钮：
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `GITHUB_OAUTH_ENABLED` | `true` | 总开关；关掉后按钮不显示，接口返回「未启用 GitHub 登录」 |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | 空 | 在 GitHub → Settings → Developer settings → OAuth Apps 新建应用后填入 |
+| `GITHUB_REDIRECT_URI` | `http://127.0.0.1:8000/api/v1/auth/github/callback` | 必须与 OAuth App 里填的回调地址**完全一致** |
+| `GITHUB_FRONTEND_URL` | `http://127.0.0.1:5173` | 授权完成后跳回的前端地址 |
+| `GITHUB_ADMIN_ROLE` | `admin` | 首次登录的 GitHub 用户被绑定的角色 |
+
+流程（后端 `app/services/github_oauth.py` + `api/v1/auth.py` 的四个端点）：
+
+1. 点按钮 → `GET /auth/github/login` 生成一次性 `state` 后 302 到 GitHub 授权页（scope 只要 `read:user`，不读邮箱、不读仓库）；
+2. GitHub 回调 `GET /auth/github/callback` → 校验 `state`、用 `code` 换 token、拉取用户资料，再按 `login` 建/取本地账号（用户名统一加 `gh_` 前缀，避免顶掉内置 `admin`）并绑定 `GITHUB_ADMIN_ROLE`；
+3. 后端不把 token 交给浏览器，而是签一张 **60 秒一次性票据**，302 回前端 `#/login?gh_code=...`；前端用 `POST /auth/github/exchange` 换正式 JWT，随即 `router.replace` 抹掉地址栏里的参数；
+4. 没配凭证时按钮不出现、接口给中文提示；`state` 与票据都一次性，重复使用会被拒并回跳登录页显示原因。
+
+> **安全提示**：按当前配置，任何 GitHub 账号登录进来都会拿到 `admin`，这是**演示取舍**（方便外部同学直接看到全部功能）。若要长期对外开放，至少把 `GITHUB_ADMIN_ROLE` 换成只读角色。另外 `state` 与一次性票据都存在**单进程内存**里，多进程（`uvicorn --workers`）或多副本部署必须换成 Redis 之类的共享存储 —— 与登录失败的计数同一限制。
 
 ---
 
@@ -404,6 +466,7 @@ cd backend
 | `OPLOG_BATCH_MAX` / `OPLOG_FLUSH_DELAY` | `200` / `0.3` | 异步落库的每批上限（条）与攒批等待（秒） |
 | `LOGIN_MAX_FAILS` / `LOGIN_FAIL_WINDOW` / `LOGIN_LOCK_SECONDS` | `5` / `300` / `300` | 同一账号在窗口期（秒）内连续失败达到次数后临时锁定的秒数 |
 | `LOGIN_IP_MAX_FAILS` | `20` | 同一 IP 在窗口期内连续失败的锁定阈值（演示环境所有请求都来自 `127.0.0.1`，故放宽） |
+| `GITHUB_OAUTH_ENABLED` `/` `GITHUB_CLIENT_ID` `/` `GITHUB_CLIENT_SECRET` `/` `GITHUB_REDIRECT_URI` `/` `GITHUB_FRONTEND_URL` `/` `GITHUB_ADMIN_ROLE` | `true` / 空 / 空 / `http://127.0.0.1:8000/api/v1/auth/github/callback` / `http://127.0.0.1:5173` / `admin` | GitHub 快捷登录（可选）。没填 Client ID/Secret 时登录页不显示按钮。详见 4.4 节 |
 
 > 默认的 `mock` 引擎用固定规则解析样张，**不需要任何密钥即可跑通「上传 → 识别 → 核对 → 生成到货单」全流程**；换成真实引擎只需改 `AI_OCR_PROVIDER` 与密钥，代码无需改动（适配层在 `backend/app/services/ocr_service.py`）。
 
@@ -429,7 +492,7 @@ cd backend
 
 ## 十一、界面验收截图
 
-`docs/screenshots/` 下是 26 个页面 + 4 个角色看板 + 2 张权限配置弹窗 + 2 张批量操作 + 3 张 AI 批量识别 + 2 张 AI 原照片在**统一基准**（1600×900、无头 Edge、`admin` 身份、重灌演示数据后）的整页截图：
+`docs/screenshots/` 下是 26 个页面 + 4 个角色看板 + 2 张权限配置弹窗 + 2 张批量操作 + 3 张 AI 批量识别 + 2 张 AI 原照片在**统一基准**（1600×900、无头 Edge、`admin` 身份、重灌演示数据后）的整页截图，另有 3 张**角色视野与权限差异对照图**（1440×900，逐账号登录实拍后拼接，见 4.3 节）：
 
 | 文件 | 页面 | 文件 | 页面 |
 | --- | --- | --- | --- |
@@ -453,7 +516,11 @@ cd backend
 | `35-ai-batch-queue.png` | AI 批量识别（3 张排队待识别） | `36-ai-batch-done.png` | AI 批量识别（3 张全部成功） |
 | `37-ai-batch-fail.png` | AI 批量识别（1 成 1 败，逐张显示原因） | `38-ai-ocr-photo-dialog.png` | AI 核对弹窗内对照原照片 |
 | `39-ai-ocr-photo-zoom.png` | AI 原照片点击放大（原始分辨率） | — | — |
+| `40-roles-menu-compare.png` | **角色视野对照**：7 个账号的侧边栏并排 | `41-roles-dashboard-compare.png` | **看板对照**：管理员 / 采购员 / 普通员工 |
+| `42-roles-reimburse-scope-compare.png` | **数据范围对照**：全公司 / 采购员本人 / 质检员本人 | — | — |
 
+> `40`~`42` 三张对照图的基准与上面不同：**1440×900**、逐账号登录后抓取真实渲染结果（菜单图取侧边栏 DOM，看板与报销图取整页截图）再纵向/横向拼接；因为要在一张图里放下多个角色，列宽做了等比缩放。重灌演示数据后单据条数会变（报销单 10 张是当前这次重灌的值），图里的数字需要重跑脚本才能对齐，脚本未随仓库提供。
+>
 > 智能审计的 4 个页面（工作台 / 审计发现 / 作业执行流程 / 审计工作底稿）尚未纳入截图集，待补。
 >
 > `30-ai-ocr.png` 是加入「模型配置」按钮与抽屉**之前**的截图，待重拍；模型配置抽屉本身也还没有截图。
@@ -481,4 +548,6 @@ cd backend
 MIT License，见 [LICENSE](LICENSE)。
 
 > 本项目定位为**功能演示与教学用途**：12 个演示账号口令统一为 `admin123`，`SECRET_KEY`、数据库文件与 AI 模型密钥均按演示标准配置。**请勿直接用于任何真实生产环境**；若要上线，至少需要更换 JWT 密钥、改用正式数据库、把模型密钥放进环境变量（而非界面配置），并按最小权限原则重新梳理角色。
+>
+> GitHub 快捷登录默认把新用户绑到 `admin` 角色（见 4.4 节），同样只适合演示；对外开放前请先改成只读角色。
 
