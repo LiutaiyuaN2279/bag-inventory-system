@@ -1,5 +1,6 @@
 <template>
   <div class="page">
+    <AuditAssuranceNotice :meta="meta" />
     <!-- 页头：审计名称 + 说明 + 执行/刷新 -->
     <div class="page-head">
       <div>
@@ -68,7 +69,7 @@
             <el-table-column prop="rule" label="判定规则" min-width="210" show-overflow-tooltip />
             <el-table-column label="命中" width="76" align="center">
               <template #default="{ row }">
-                <span :class="['hit-num', row.hit_count ? 'hit-on' : 'hit-off']">{{ row.hit_count }}</span>
+                  <span :class="['hit-num', row.hit_count ? 'hit-on' : 'hit-off']">{{ row.hit_count ?? '—' }}</span>
               </template>
             </el-table-column>
             <el-table-column label="风险" width="88" align="center">
@@ -82,7 +83,7 @@
         </div>
         <div class="pager">
           <span class="hint">
-            程序命中判定：命中数 &gt; 0 记为「命中」，否则按程序性质报告为「通过」或「无」；
+            当前仅统计旧口径线索；R03/R10缺证不计算，零命中不表示正式审计通过；
             共扫描 <b>{{ totalRecords }}</b> 条业务记录
           </span>
         </div>
@@ -105,7 +106,7 @@
               <span class="sl-value">{{ meta.period || '—' }}</span>
             </div>
             <div class="scope-row">
-              <span class="sl-label">期间采购总额</span>
+              <span class="sl-label">旧口径采购额（未核验）</span>
               <span class="sl-value num">¥ {{ fmt(scope.total_purchase_amount) }}</span>
             </div>
             <div class="scope-row">
@@ -141,6 +142,8 @@ import {
   Refresh, VideoPlay, List, Aim, Warning, Money, Cpu,
 } from '@element-plus/icons-vue'
 import { auditApi } from '@/api/audit'
+import AuditAssuranceNotice from '@/components/AuditAssuranceNotice.vue'
+import { formatAuditNumber } from '@/utils/auditPresentation'
 import { useUserStore } from '@/store/user'
 import { CHART_TOOLTIP, useChart } from '@/composables/useChart'
 
@@ -157,7 +160,7 @@ const note = ref('')
 
 const canRun = computed(() => userStore.hasPermission('audit:run'))
 const levelOf = (lv) => (summary.value.by_level || {})[lv] || 0
-const fmt = (v) => Number(v || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const fmt = formatAuditNumber
 /** 大额缩写：亿级才缩写，万级仍显示完整金额（保留小数便于与底稿核对） */
 const short = (v) => {
   const n = Number(v || 0)

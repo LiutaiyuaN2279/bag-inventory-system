@@ -1,5 +1,6 @@
 <template>
   <div class="page">
+    <AuditAssuranceNotice :meta="meta" />
     <!-- 页头 -->
     <div class="page-head">
       <div>
@@ -12,7 +13,7 @@
       </div>
       <div class="ph-actions">
         <el-tag :type="running ? 'warning' : 'success'" effect="dark" round>
-          {{ running ? '执行中' : '执行完成' }}
+          {{ running ? '执行中' : '受限试算' }}
         </el-tag>
         <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
         <el-button type="primary" :icon="VideoPlay" :loading="running" @click="onRun">重新执行审计</el-button>
@@ -148,6 +149,7 @@ import {
   Refresh, VideoPlay, Operation, Select, ArrowRight, Loading,
 } from '@element-plus/icons-vue'
 import { auditApi } from '@/api/audit'
+import AuditAssuranceNotice from '@/components/AuditAssuranceNotice.vue'
 
 const loading = ref(false)
 const running = ref(false)

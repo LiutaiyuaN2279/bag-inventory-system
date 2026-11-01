@@ -1,11 +1,12 @@
 <template>
   <div class="page">
+    <AuditAssuranceNotice :meta="meta" />
     <!-- 页头 -->
     <div class="page-head">
       <div>
         <h2 class="ph-title"><el-icon><Document /></el-icon>审计工作底稿</h2>
         <div class="ph-desc">
-          按审计程序归集全部审计发现，形成可直接归档的审计工作底稿 ·
+          受限试算底稿，不是正式历史审计报告 ·
           共 <b>{{ groups.length }}</b> 份底稿分册 / <b>{{ totalFindings }}</b> 条审计发现
         </div>
       </div>
@@ -41,7 +42,7 @@
         </div>
         <div class="wph-item">
           <span class="wph-label">编制日期</span>
-          <span class="wph-value">{{ meta.audit_date || '—' }}</span>
+          <span class="wph-value">{{ meta.generated_at || '—' }}</span>
         </div>
       </div>
     </el-card>
@@ -67,7 +68,7 @@
                 <el-tag :type="riskTagType(g.risk_level)" size="small" effect="plain" round>
                   {{ g.risk_level }}
                 </el-tag>
-                <span class="toc-count">{{ g.count }} 条</span>
+                <span class="toc-count">{{ g.count ?? '—' }} 条</span>
                 <span class="toc-amount">¥ {{ fmt(g.amount) }}</span>
               </div>
             </div>
@@ -79,7 +80,7 @@
         <template #header>
           <span>{{ activeGroup.code }}　{{ activeGroup.name }}</span>
           <span class="card-tip">
-            命中 {{ activeGroup.count }} 条 / 涉及金额 ¥ {{ fmt(activeGroup.amount) }}
+            线索 {{ activeGroup.count ?? '—' }} 条 / 参考金额 ¥ {{ fmt(activeGroup.amount) }}
           </span>
         </template>
         <div class="sheet-body">
@@ -96,8 +97,9 @@
             <div class="sh-row">
               <span class="sh-label">审计结论</span>
               <span class="sh-value">
-                <b v-if="activeGroup.count">该程序执行后命中 {{ activeGroup.count }} 条异常，构成审计发现。</b>
-                <b v-else class="sh-pass">该程序执行后未发现异常，审计结论为「无异常」。</b>
+                <b v-if="activeGroup.status === '数据不足'">证据及份额依据不足，结果不可确定；未计算不等于零异常。</b>
+                <b v-else-if="activeGroup.count">旧口径形成 {{ activeGroup.count }} 条核查线索，尚非正式审计结论。</b>
+                <b v-else>旧口径未生成线索，历史可信范围未核定，不能认定审计通过。</b>
               </span>
             </div>
             <div v-if="activeGroup.note" class="sh-row">
@@ -151,6 +153,8 @@ import { computed, onMounted, ref } from 'vue'
 import { Refresh, Download, Printer, Document } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { auditApi } from '@/api/audit'
+import AuditAssuranceNotice from '@/components/AuditAssuranceNotice.vue'
+import { formatAuditNumber, withAuditDisclosure, auditDisclosureColumns } from '@/utils/auditPresentation'
 import { exportRows } from '@/utils/exportRows'
 
 const loading = ref(false)
@@ -160,7 +164,7 @@ const meta = ref({})
 const scope = ref({})
 const summary = ref({})
 
-const fmt = (v) => Number(v || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const fmt = formatAuditNumber
 const activeGroup = computed(() => groups.value[activeIdx.value] || null)
 const totalFindings = computed(() => groups.value.reduce((s, g) => s + (g.count || 0), 0))
 
@@ -202,7 +206,7 @@ function onExport() {
   ]
   const rows = groups.value.flatMap((g) => (g.findings || []).map((f) => ({ ...f, rule_code: g.code })))
   if (!rows.length) return ElMessage.warning('当前没有可导出的底稿数据')
-  exportRows(rows, [{ prop: 'rule_code', label: '关联程序' }, ...columns], '审计工作底稿')
+  exportRows(withAuditDisclosure(rows, meta.value), [...auditDisclosureColumns, { prop: 'rule_code', label: '关联程序' }, ...columns], '受限试算底稿')
 }
 
 function onPrint() {

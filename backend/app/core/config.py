@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     APP_PORT: int = 8000
 
     DATABASE_URL: str = "sqlite:///./data/app.db"
+    # Independent non-formal trial archive; does not migrate the business database.
+    AUDIT_TRIAL_ARCHIVE_DIR: str = "data/audit_trials"
 
     # 上传文件归档目录（相对 backend 工作目录）。
     # AI 单据识别会把上传的原图落盘保存在这里，识别记录只存相对路径。
