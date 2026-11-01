@@ -1,0 +1,92 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 965 >>
+stream
+BT
+/F1 16 Tf
+50 760 Td
+18 TL
+/F1 16 Tf
+(VAT SPECIAL INVOICE) Tj
+T*
+/F1 10 Tf
+(\(Electronic Invoice\)) Tj
+T*
+/F1 9 Tf
+(Invoice Code: 031002400111) Tj
+T*
+/F1 9 Tf
+(Invoice No: 26312000000098765432) Tj
+T*
+/F1 9 Tf
+(Issue Date: 2026-10-15) Tj
+T*
+/F1 9 Tf
+(Buyer: Xingchen Technology Co., Ltd.) Tj
+T*
+/F1 9 Tf
+(Buyer Tax ID: 91330000MA2XXXXX1Y) Tj
+T*
+/F1 9 Tf
+(Seller: Shanghai Jinjiang Inn Hotel Management Co., Ltd.) Tj
+T*
+/F1 9 Tf
+(Seller Tax ID: 91310115MA1H8XYZ2K) Tj
+T*
+T*
+/F1 9 Tf
+(Item                 Qty    Amount    TaxRate   Tax) Tj
+T*
+/F1 9 Tf
+(Accommodation       3      1556.60   6%        93.40) Tj
+T*
+T*
+/F1 9 Tf
+(Amount excl. tax: 1556.60) Tj
+T*
+/F1 9 Tf
+(Tax amount: 93.40) Tj
+T*
+/F1 11 Tf
+(Total \(incl. tax\): 1650.00) Tj
+T*
+/F1 9 Tf
+(Total in words: ONE THOUSAND SIX HUNDRED FIFTY) Tj
+T*
+T*
+/F1 9 Tf
+(Check-in: 2026-10-12  Check-out: 2026-10-15  Nights: 3) Tj
+T*
+/F1 9 Tf
+(City: Shanghai) Tj
+T*
+/F1 9 Tf
+(Billing remark: travel accommodation) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000001257 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1327
+%%EOF
