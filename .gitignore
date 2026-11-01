@@ -24,6 +24,8 @@ htmlcov/
 
 # 上传归档（AI 识别原图等运行时产物，重置脚本会一并清理）
 backend/data/uploads/
+# Private trial snapshots contain business query results; never commit them.
+backend/data/audit_trials/
 
 # 数据库备份（*.db 已忽略，但 app.db.bak-时间戳 这类要单独排除）
 backend/data/*.bak

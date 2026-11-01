@@ -13,13 +13,16 @@
      审计人员据此可直接定位到业务单据。
 """
 import math
+import hashlib
 import os
 import sqlite3
 import time
-from datetime import datetime
+from copy import deepcopy
+from datetime import datetime, timezone
 from pathlib import Path
 
 from app.core.config import settings
+from app.services.audit_assurance import legacy_assurance, blocked_delivery_procedure
 
 # ---------------------------------------------------------------- 审计配置
 AUDIT_CONFIG = {
@@ -44,6 +47,11 @@ AUDIT_CONFIG = {
 }
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
+# Capture the loaded implementation basis once, not whatever happens to be on
+# disk when a long-lived process later builds a report (B002-C07).
+RULES_SOURCE = Path(__file__).read_text(encoding="utf-8")
+ASSURANCE_SOURCE = Path(__file__).with_name("audit_assurance.py").read_text(encoding="utf-8")
+RULE_VERSION = hashlib.sha256((RULES_SOURCE + ASSURANCE_SOURCE).encode("utf-8")).hexdigest()
 
 
 def resolve_db_path() -> str:
@@ -77,7 +85,7 @@ class AuditAgent:
 
     def __init__(self, db_path: str | None = None, config: dict | None = None):
         self.db_path = db_path or resolve_db_path()
-        self.cfg = config or AUDIT_CONFIG
+        self.cfg = deepcopy(config or AUDIT_CONFIG)
         # 只读模式打开：哪怕程序有缺陷也写不进被审计库
         self.conn = sqlite3.connect(f"file:{self.db_path}?mode=ro", uri=True)
         self.conn.row_factory = sqlite3.Row
@@ -93,6 +101,7 @@ class AuditAgent:
         self.clean_stats: dict[str, int] = {}
         self.summary_stats: dict = {}
         self.workpaper_stats: dict = {}
+        self.query_trace: list[dict] = []
 
     def close(self):
         try:
@@ -104,7 +113,9 @@ class AuditAgent:
     def q(self, sql: str, args=()) -> list[dict]:
         cur = self.conn.cursor()
         cur.execute(sql, args)
-        return [dict(r) for r in cur.fetchall()]
+        rows = [dict(r) for r in cur.fetchall()]
+        self.query_trace.append({"sql": sql, "parameters": list(args), "rows": rows})
+        return rows
 
     def one(self, sql: str, args=()):
         rows = self.q(sql, args)
@@ -146,6 +157,9 @@ class AuditAgent:
     def run(self) -> dict:
         """按审计作业的六个阶段顺序执行，每阶段记录真实的耗时与产出。"""
         started = time.perf_counter()
+        # C07: all procedures in a run observe one SQLite read transaction.
+        self.conn.execute("BEGIN")
+        self.snapshot_at = datetime.now(timezone.utc).isoformat()
 
         def step(name, fn, produce, note):
             """fn 干活，produce 把产出摘要写进步骤记录（用于工作台的执行日志）。"""
@@ -271,7 +285,7 @@ class AuditAgent:
             overall = "中"
         else:
             overall = "低"
-        hit_procs = [p for p in self.procedures if p["hit_count"] > 0]
+        hit_procs = [p for p in self.procedures if (p["hit_count"] or 0) > 0]
         self.summary_stats = {
             "procedure_total": len(self.procedures),
             "procedure_hit": len(hit_procs),
@@ -279,7 +293,10 @@ class AuditAgent:
             "by_level": by_level,
             "by_rule": by_rule,
             "amount_total": round(amount_total, 2),
-            "overall_risk": overall,
+            "legacy_overall_risk": overall,
+            "overall_risk": "待核验",
+            "blocked_procedures": [p["code"] for p in self.procedures if p.get("status") == "数据不足"],
+            "formal_audit_eligible": False,
         }
         return self.summary_stats
 
@@ -330,12 +347,19 @@ class AuditAgent:
             self.proc_r10_order_without_arrival,
         ):
             fn()
+        for procedure in self.procedures:
+            if procedure.get("status") != "数据不足":
+                procedure["status"] = "旧口径线索，待核验"
+                if not procedure["hit_count"]:
+                    procedure["risk_level"] = "待核验"
+                procedure["note"] = (procedure["note"] + "；仅为旧口径线索，不代表已按新设计完成正式审计").lstrip("；")
         return self.procedures
 
     def _note_procedures(self, s):
-        hits = [p for p in s if p["hit_count"] > 0]
+        hits = [p for p in s if (p["hit_count"] or 0) > 0]
         return (f"执行审计程序 {len(s)} 项，其中 {len(hits)} 项命中异常，"
-                f"累计命中记录 {sum(p['hit_count'] for p in s)} 条")
+                f"累计旧口径线索 {sum(p['hit_count'] or 0 for p in s)} 条；"
+                "R03/R10缺证未作确定性计算，零线索不代表正式审计通过")
 
     def calc_materiality(self) -> float:
         """重要性水平 = 期间采购订单总额 × 配置比例，向下取整到百元。"""
@@ -409,6 +433,7 @@ class AuditAgent:
             JOIN materials m ON m.id = poi.material_id
             WHERE poi.arrived_qty > 0
               AND ABS(poi.arrived_qty - poi.inbound_qty) > 0.001
+            GROUP BY poi.id
             ORDER BY diff_amount DESC
         """)
         self.add_procedure(
@@ -445,51 +470,8 @@ class AuditAgent:
 
     # ------------------------------------------------------------ R03
     def proc_r03_long_age_order(self):
-        """订单长期未清（账龄分析）。"""
-        p = self.cfg["params"]
-        rows = self.q("""
-            SELECT po.order_no, po.status, po.total_amount, po.created_at,
-                   s.supplier_name,
-                   CAST(julianday(?) - julianday(po.created_at) AS INTEGER) age_days,
-                   (SELECT COUNT(*) FROM purchase_arrivals a
-                     WHERE a.order_id = po.id AND a.status = '已验收') accepted_cnt,
-                   (SELECT COUNT(*) FROM purchase_arrivals a
-                     WHERE a.order_id = po.id) arrival_cnt
-            FROM purchase_orders po
-            LEFT JOIN suppliers s ON s.id = po.supplier_id
-            WHERE po.status IN ('已审核', '部分到货')
-              AND julianday(?) - julianday(po.created_at) > ?
-            ORDER BY age_days DESC
-        """, (self.cfg["audit_date"], self.cfg["audit_date"], p["long_age_days"]))
-        self.add_procedure(
-            "R03", "采购订单账龄分析",
-            "识别长期未执行完毕的采购订单，评估在途物资的真实性与可能的减值",
-            f"状态∈{{已审核,部分到货}} 且 账龄 > {p['long_age_days']} 天",
-            len(rows), "中" if rows else "无",
-        )
-        for r in rows:
-            amt = float(r["total_amount"] or 0)
-            level = "高" if (amt >= self.materiality and r["age_days"] > 90) else "中"
-            self.add_finding(
-                "R03", "采购订单长期挂账未执行完毕", level, amt,
-                f"采购订单 {r['order_no']}｜{r['supplier_name'] or '未知供应商'}",
-                f"采购订单 {r['order_no']}（供应商：{r['supplier_name'] or '未知'}）"
-                f"创建于 {str(r['created_at'])[:10]}，当前状态为「{r['status']}」，"
-                f"账龄已达 {r['age_days']} 天，订单金额 ¥{amt:,.2f}。"
-                f"该订单共有 {r['arrival_cnt']} 张到货单，其中已验收 {r['accepted_cnt']} 张，"
-                f"订单长期未关闭且未说明原因。",
-                [
-                    f"采购订单：{r['order_no']}",
-                    f"供应商：{r['supplier_name'] or '未知'}",
-                    f"订单金额：¥{amt:,.2f}",
-                    f"当前状态：{r['status']}",
-                    f"账龄：{r['age_days']} 天",
-                    f"到货单数：{r['arrival_cnt']}（已验收 {r['accepted_cnt']}）",
-                ],
-                "向采购部门取得未执行原因说明；对超过一年的订单评估是否应作废；"
-                "对已到货未验收的应督促质检部门及时验收。",
-                [{"type": "采购订单", "no": r["order_no"]}],
-            )
+        """B002-C02/D01: current rows cannot prove portion-level fulfilment."""
+        self.procedures.append(blocked_delivery_procedure("R03", "采购订单账龄分析"))
 
     # ------------------------------------------------------------ R04
     def proc_r04_price_deviation(self):
@@ -778,37 +760,8 @@ class AuditAgent:
 
     # ------------------------------------------------------------ R10
     def proc_r10_order_without_arrival(self):
-        """订单无任何到货记录。"""
-        rows = self.q("""
-            SELECT po.order_no, po.status, po.total_amount, po.created_at,
-                   s.supplier_name,
-                   CAST(julianday(?) - julianday(po.created_at) AS INTEGER) age_days
-            FROM purchase_orders po
-            LEFT JOIN suppliers s ON s.id = po.supplier_id
-            WHERE po.status IN ('已审核', '部分到货')
-              AND NOT EXISTS (SELECT 1 FROM purchase_arrivals a WHERE a.order_id = po.id)
-            ORDER BY po.total_amount DESC
-        """, (self.cfg["audit_date"],))
-        self.add_procedure(
-            "R10", "订单执行情况检查",
-            "识别已审核但完全没有到货记录的采购订单，评估采购计划执行的有效性",
-            "状态∈{已审核,部分到货} 且 到货单数为 0", len(rows), "中" if rows else "无",
-        )
-        for r in rows:
-            amt = float(r["total_amount"] or 0)
-            self.add_finding(
-                "R10", "已审核采购订单无任何到货记录", "中", amt,
-                f"采购订单 {r['order_no']}｜{r['supplier_name'] or '未知供应商'}",
-                f"采购订单 {r['order_no']}（供应商：{r['supplier_name'] or '未知'}）"
-                f"于 {str(r['created_at'])[:10]} 审核通过，金额 ¥{amt:,.2f}，"
-                f"已 {r['age_days']} 天但系统中没有任何到货单记录，"
-                f"订单处于空转状态。",
-                [f"采购订单：{r['order_no']}", f"金额：¥{amt:,.2f}",
-                 f"账龄：{r['age_days']} 天", "到货单：0"],
-                "核实订单是否已通过线下方式执行；若供应商已交货应补录到货单；"
-                "若订单已失效应及时作废。",
-                [{"type": "采购订单", "no": r["order_no"]}],
-            )
+        """No arrival row is not evidence of no physical delivery (DEC-008)."""
+        self.procedures.append(blocked_delivery_procedure("R10", "订单执行情况检查"))
 
     # ------------------------------------------------------------ 汇总
     def build_report(self) -> dict:
@@ -822,6 +775,12 @@ class AuditAgent:
                 "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "agent_version": "AuditAgent v1.0（基于 Trae 开发）",
                 "data_source": os.path.basename(self.db_path),
+                "period_start": self.cfg["period_start"],
+                "period_end": self.cfg["period_end"],
+                "business_cutoff": self.cfg["audit_date"],
+                "business_timezone": "Asia/Shanghai",
+                "formal_report": False,
+                "assurance": legacy_assurance(),
             },
             "scope": {
                 "total_purchase_amount": round(self.total_purchase, 2),
@@ -832,13 +791,22 @@ class AuditAgent:
             "clean_stats": self.clean_stats,
             "summary": self.summary_stats,
             "data_quality_note": (
-                "本报告基于被审计系统内置的演示数据集运行。该数据集由测试脚本按随机规则生成，"
-                "采购单价、供应商分配等字段不服从真实业务的价格规律，"
-                "因此「价格合理性分析」等程序的高命中率主要反映数据生成特性，"
-                "不能直接推定存在舞弊；审计程序的设计逻辑本身可直接复用于生产数据。"
+                "本次读取当前数据库进行受限试算，未逐条核实数据来源与历史有效性，"
+                "不据此判定记录属于演示或真实业务，也不能直接推定存在舞弊。"
+                "旧口径尚未按新设计完成改造；"
+                "历史可信范围未核定，R03/R10缺证不计算，不代表正式历史审计通过。"
             ),
             "procedures": self.procedures,
             "findings": self.findings,
+            # Removed by the API before returning data; saved privately with the run.
+            "_snapshot_basis": {
+                "period_start": self.cfg["period_start"], "period_end": self.cfg["period_end"],
+                "business_cutoff": self.cfg["audit_date"], "snapshot_at": self.snapshot_at,
+                "business_data": self.query_trace, "rules_source": RULES_SOURCE,
+                "dependency_sources": {"audit_assurance.py": ASSURANCE_SOURCE},
+                "rule_version": RULE_VERSION,
+                "rule_config": self.cfg, "calendar_versions": [], "evidence_versions": [],
+            },
         }
 
 

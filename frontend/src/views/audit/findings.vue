@@ -1,5 +1,6 @@
 <template>
   <div class="page">
+    <AuditAssuranceNotice :meta="meta" />
     <!-- 页头 -->
     <div class="page-head">
       <div>
@@ -7,7 +8,7 @@
         <div class="ph-desc">
           共 <b>{{ total }}</b> 条审计发现，其中高风险 <b>{{ levelCount('高') }}</b> 条，
           涉及金额 <b>¥ {{ fmt(amountTotal) }}</b> ·
-          每条发现均附可追溯的证据链，点击「详情」查看证据与审计建议
+          以下为旧口径核查线索，不代表已核验的正式审计结论
         </div>
       </div>
       <div class="ph-actions">
@@ -226,6 +227,8 @@ import {
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { auditApi } from '@/api/audit'
+import AuditAssuranceNotice from '@/components/AuditAssuranceNotice.vue'
+import { formatAuditNumber, withAuditDisclosure, auditDisclosureColumns } from '@/utils/auditPresentation'
 import { exportRows } from '@/utils/exportRows'
 
 const loading = ref(false)
@@ -233,10 +236,11 @@ const tableRows = ref([])
 const total = ref(0)
 const procedures = ref([])
 const summary = ref({})
+const meta = ref({})
 const query = reactive({ risk_level: '', rule_code: '', keyword: '', page: 1, page_size: 20 })
 const detail = reactive({ visible: false, loading: false, data: {} })
 
-const fmt = (v) => Number(v || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const fmt = formatAuditNumber
 const levelCount = (lv) => ((summary.value.by_level || {})[lv] || 0)
 const amountTotal = computed(() => summary.value.amount_total || 0)
 const rangeText = computed(() => {
@@ -278,6 +282,7 @@ async function load() {
     tableRows.value = res.list || []
     total.value = res.total || 0
     summary.value = res.summary || {}
+    meta.value = res.report_meta || {}
   } catch (e) {
     tableRows.value = []
     total.value = 0
@@ -316,7 +321,7 @@ async function openDetail(row) {
   detail.visible = true
   detail.loading = true
   try {
-    detail.data = await auditApi.findingDetail(row.finding_id)
+    detail.data = await auditApi.findingDetail(row.finding_id, meta.value.run_id)
   } catch (e) {
     console.warn('audit finding detail failed', e)
   } finally {
@@ -337,7 +342,7 @@ function onExport() {
     { prop: 'suggestion', label: '审计建议' },
   ]
   if (!tableRows.value.length) return ElMessage.warning('当前没有可导出的数据')
-  exportRows(tableRows.value, columns, '审计发现清单')
+  exportRows(withAuditDisclosure(tableRows.value, meta.value), [...auditDisclosureColumns, ...columns], '受限试算线索清单')
 }
 
 onMounted(() => {
