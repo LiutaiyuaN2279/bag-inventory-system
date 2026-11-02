@@ -1,0 +1,3 @@
+# Isolated verification only; does not enable a production service.
+-r requirements.txt
+httpx==0.28.1
