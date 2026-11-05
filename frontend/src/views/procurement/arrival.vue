@@ -4,7 +4,7 @@
     <div class="page-head">
       <div>
         <h2 class="ph-title"><el-icon><Van /></el-icon>到货验收</h2>
-        <div class="ph-desc">登记采购订单的到货明细，验收后按合格数自动入库并回写订单进度 · 共 <b>{{ total }}</b> 条</div>
+        <div class="ph-desc">新到货须先逐明细质检、独立质量放行，再由仓管入库。本批只支持整张到货正常全量放行/一次入库 · 共 <b>{{ total }}</b> 条</div>
       </div>
       <div class="ph-actions">
         <el-button :icon="Refresh" @click="fetchList">刷新</el-button>
@@ -86,13 +86,15 @@
             <el-option v-for="w in warehouses" :key="w.id" :label="w.warehouse_name" :value="w.id" />
           </el-select>
         </el-form-item>
+        <el-form-item label="实际收货日" required><el-date-picker v-model="form.actual_receipt_date" type="date" value-format="YYYY-MM-DD" placeholder="人工明确声明，不用录入日替代" /></el-form-item>
         <el-form-item label="到货明细">
           <el-table :data="form.items" border size="small">
             <el-table-column prop="material_name" label="物料" min-width="160" show-overflow-tooltip />
             <el-table-column prop="spec" label="规格" width="140" show-overflow-tooltip />
             <el-table-column prop="unit" label="单位" width="70" align="center" />
-            <el-table-column label="到货数" width="120" align="right" class-name="col-num"><template #default="{ row }"><el-input-number v-model="row.arrived_qty" :min="0" :precision="2" style="width:100%" /></template></el-table-column>
-            <el-table-column label="合格数" width="120" align="right" class-name="col-num"><template #default="{ row }"><el-input-number v-model="row.qualified_qty" :min="0" :precision="2" style="width:100%" /></template></el-table-column>
+            <el-table-column prop="remaining_qty" label="剩余可到货" width="100" align="right" />
+            <el-table-column label="到货数" width="120" align="right" class-name="col-num"><template #default="{ row }"><el-input-number v-model="row.arrived_qty" :min="0" :max="row.remaining_qty" :precision="2" style="width:100%" /></template></el-table-column>
+            <el-table-column label="预填合格声明" width="120" align="right" class-name="col-num"><template #default="{ row }"><el-input-number v-model="row.qualified_qty" :min="0" :precision="2" style="width:100%" /></template></el-table-column>
             <el-table-column label="入库仓库" width="160">
               <template #default="{ row }">
                 <el-select v-model="row.warehouse_id" style="width:100%"><el-option v-for="w in warehouses" :key="w.id" :label="w.warehouse_name" :value="w.id" /></el-select>
@@ -102,12 +104,14 @@
         </el-form-item>
         <el-form-item label="备注"><el-input v-model="form.remark" /></el-form-item>
       </el-form>
-      <template #footer><el-button @click="dialog.visible=false">取消</el-button><el-button type="primary" :loading="submitting" @click="onSubmit">确定</el-button></template>
+      <template #footer><el-button @click="dialog.visible=false">取消</el-button><el-button type="primary" :loading="submitting" :disabled="!form.items.length" @click="onSubmit">确定</el-button></template>
     </el-dialog>
 
     <DetailDialog v-model="detail.visible" title="到货单详情" :doc-no="detail.data?.arrival_no"
       :status="detail.data?.status" :status-type="detail.data?.status==='已验收'?'success':(detail.data?.status==='已驳回'?'danger':'warning')" width="1000px" :print-data="buildPrintDoc">
       <template v-if="detail.data">
+        <el-alert v-if="!detail.data.actual_receipt_date" title="旧演示记录缺少新流程实际收货日期与质量绑定，仅供历史展示，不自动补为已放行" type="warning" :closable="false" />
+        <p>实际声明收货日：{{ detail.data.actual_receipt_date || '未提供' }}；实际入库记录时间（UTC）：{{ detail.data.inbound_posted_at || '尚未过账' }}</p>
         <el-descriptions :column="2" border>
           <el-descriptions-item label="到货单号">{{ detail.data.arrival_no }}</el-descriptions-item>
           <el-descriptions-item label="状态"><el-tag :type="detail.data.status==='已验收'?'success':(detail.data.status==='已驳回'?'danger':'warning')">{{ detail.data.status }}</el-tag></el-descriptions-item>
@@ -121,7 +125,7 @@
           <el-table-column prop="spec" label="规格" width="140" show-overflow-tooltip />
           <el-table-column prop="unit" label="单位" width="70" align="center" />
           <el-table-column prop="arrived_qty" label="到货" width="80" align="right" class-name="col-num" />
-          <el-table-column prop="qualified_qty" label="合格" width="80" align="right" class-name="col-num" />
+          <el-table-column prop="qualified_qty" label="原预填合格声明" width="80" align="right" class-name="col-num" />
           <el-table-column prop="warehouse_name" label="仓库" width="120" show-overflow-tooltip />
         </el-table>
       </template>
@@ -129,7 +133,7 @@
 
     <ApprovalDialog v-model="apv.visible" title="到货验收入库" :doc-no="apv.data?.arrival_no" :status="apv.data?.status"
       :status-type="apv.data?.status==='已验收'?'success':(apv.data?.status==='已驳回'?'danger':'warning')" :loading="apv.loading" confirm-text="确认验收入库"
-      warn="验收后将按合格数自动入库，并更新对应采购订单的到货/入库进度。" @skip="onSkip" @reject="onReject" @confirm="onApproveConfirm">
+      warn="登记合格数仅为预填声明；必须先由质检独立正常全量放行，仓管才能按相符放行量入库。" @skip="onSkip" @reject="onReject" @confirm="onApproveConfirm">
       <template v-if="apv.data">
         <el-descriptions :column="2" border size="small">
           <el-descriptions-item label="到货单号">{{ apv.data.arrival_no }}</el-descriptions-item>
@@ -143,7 +147,7 @@
           <el-table-column prop="spec" label="规格" width="140" show-overflow-tooltip />
           <el-table-column prop="unit" label="单位" width="70" align="center" />
           <el-table-column prop="arrived_qty" label="到货数" width="100" align="right" class-name="col-num" />
-          <el-table-column prop="qualified_qty" label="合格数" width="100" align="right" class-name="col-num" />
+          <el-table-column prop="qualified_qty" label="预填合格声明" width="100" align="right" class-name="col-num" />
           <el-table-column prop="warehouse_name" label="入库仓库" min-width="120" show-overflow-tooltip />
         </el-table>
       </template>
@@ -173,7 +177,7 @@ const list = ref([]); const total = ref(0); const loading = ref(false)
 const pageCount = computed(() => Math.max(1, Math.ceil(total.value / query.page_size)))
 const orders = ref([]); const warehouses = ref([])
 const dialog = reactive({ visible: false }); const submitting = ref(false); const formRef = ref()
-const form = reactive({ order_id: null, remark: '', items: [] })
+const form = reactive({ order_id: null, actual_receipt_date: null, remark: '', items: [] })
 const defaultWarehouse = ref(null)
 const detail = reactive({ visible: false, data: null })
 const apv = reactive({ visible: false, loading: false, data: null })
@@ -222,25 +226,50 @@ async function onBatchAction(key) {
 }
 
 async function onAdd() {
-  form.order_id = null; form.remark = ''; form.items = []
-  const res = await orderApi.list({ page: 1, page_size: 1000, status: '已审核' })
-  orders.value = res.list || []
+  form.order_id = null; form.actual_receipt_date = null; form.remark = ''; form.items = []
+  orders.value = []
+  const available = new Map()
+  for (const status of ['已审核', '部分到货']) {
+    let page = 1
+    while (true) {
+      const res = await orderApi.list({ page, page_size: 100, status })
+      const rows = res.list || []
+      rows.forEach(order => available.set(order.id, order))
+      if (!rows.length || page * 100 >= res.total) break
+      page++
+    }
+  }
+  orders.value = [...available.values()]
   dialog.visible = true
 }
 async function onOrderChange(oid) {
+  form.items = []
+  if (!oid) return
   const res = await orderApi.detail(oid)
-  form.items = res.items.map(i => ({ order_item_id: i.id, material_id: i.material_id, material_name: i.material_name,
-    spec: i.spec || '', unit: i.unit || '', arrived_qty: i.qty, qualified_qty: i.qty, warehouse_id: defaultWarehouse.value || warehouses.value[0]?.id }))
+  if (form.order_id !== oid) return // 不让旧选择的较慢回包覆盖当前订单。
+  form.items = res.items.map(i => {
+    const remaining = Math.max(Math.round((i.qty - (i.arrived_qty || 0)) * 100) / 100, 0)
+    return { order_item_id: i.id, material_id: i.material_id, material_name: i.material_name,
+      spec: i.spec || '', unit: i.unit || '', remaining_qty: remaining,
+      arrived_qty: remaining, qualified_qty: remaining,
+      warehouse_id: defaultWarehouse.value || warehouses.value[0]?.id }
+  }).filter(i => i.remaining_qty > 0)
+  if (!form.items.length) ElMessage.warning('该订单已全部登记到货，没有剩余可到货明细')
 }
 function applyWarehouse(wid) { form.items.forEach(i => { i.warehouse_id = wid }) }
 
 async function onSubmit() {
   if (!form.order_id) return ElMessage.warning('请选择采购订单')
-  if (form.items.some(i => !i.warehouse_id)) return ElMessage.warning('请填写入库仓库')
-  if (form.items.some(i => (i.qualified_qty || 0) > (i.arrived_qty || 0))) return ElMessage.warning('合格数不能大于到货数')
-  if (form.items.reduce((s, i) => s + (Number(i.arrived_qty) || 0), 0) <= 0) return ElMessage.warning('到货数量不能全为 0，请填写实际到货数')
+  if (!form.actual_receipt_date) return ElMessage.warning('请明确填写实际收货日期，不从录入时间推断')
+  if (form.items.some(i => !Number.isFinite(i.arrived_qty) || !Number.isFinite(i.qualified_qty)
+    || i.arrived_qty < 0 || i.qualified_qty < 0)) return ElMessage.warning('到货数量和合格数必须为有效非负数')
+  if (form.items.some(i => i.arrived_qty > i.remaining_qty)) return ElMessage.warning('到货数量不能超过剩余可到货数')
+  if (form.items.some(i => i.qualified_qty > i.arrived_qty)) return ElMessage.warning('合格数不能大于到货数')
+  const items = form.items.filter(i => i.arrived_qty > 0).map(({ remaining_qty, ...item }) => item)
+  if (!items.length) return ElMessage.warning('请填写实际到货数，没有可提交的到货明细')
+  if (items.some(i => !i.warehouse_id)) return ElMessage.warning('请填写入库仓库')
   submitting.value = true
-  try { await arrivalApi.create({ order_id: form.order_id, remark: form.remark, items: form.items }); ElMessage.success('登记成功'); dialog.visible = false; fetchList() } finally { submitting.value = false }
+  try { await arrivalApi.create({ order_id: form.order_id, actual_receipt_date: form.actual_receipt_date, remark: form.remark, items }); ElMessage.success('登记成功；仍需逐明细质检及独立放行'); dialog.visible = false; fetchList() } finally { submitting.value = false }
 }
 async function onDetail(row) { detail.data = await arrivalApi.detail(row.id); detail.visible = true }
 
@@ -263,7 +292,7 @@ function buildPrintDoc() {
       { label: '规格', prop: 'spec', width: 140 },
       { label: '单位', prop: 'unit', width: 70 },
       { label: '到货', prop: 'arrived_qty', width: 80 },
-      { label: '合格', prop: 'qualified_qty', width: 80 },
+      { label: '原预填合格声明', prop: 'qualified_qty', width: 80 },
       { label: '仓库', prop: 'warehouse_name', width: 120 }
     ],
     rows: items,

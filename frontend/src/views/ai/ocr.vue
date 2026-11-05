@@ -295,6 +295,7 @@
               <el-option v-for="w in warehouses" :key="w.id" :label="w.warehouse_name" :value="w.id" />
             </el-select>
           </el-form-item>
+          <el-form-item label="实际收货日"><el-date-picker v-model="dialog.form.actual_receipt_date" type="date" value-format="YYYY-MM-DD" placeholder="人工声明；不采用OCR或录入日期" /></el-form-item>
           <el-form-item label="备注">
             <el-input v-model="dialog.form.remark" style="width: 300px" placeholder="可填来源说明" />
           </el-form-item>
@@ -822,6 +823,7 @@ function fillDialog(rec) {
     supplier_name: rec.supplier_name || '',
     order_id: rec.order_id || null,
     warehouse_id: null,
+    actual_receipt_date: null,
     remark: '',
     items: (rec.items || []).map((i) => ({ ...i, _options: null }))
   }
@@ -869,12 +871,14 @@ async function onImport(archiveOnly) {
   const payload = {
     doc_type: dialog.form.doc_type, doc_no: dialog.form.doc_no,
     supplier_id: dialog.form.supplier_id, supplier_name: dialog.form.supplier_name,
-    order_id: dialog.form.order_id, warehouse_id: dialog.form.warehouse_id,
+    order_id: archiveOnly ? null : dialog.form.order_id, warehouse_id: archiveOnly ? null : dialog.form.warehouse_id,
+    actual_receipt_date: archiveOnly ? null : dialog.form.actual_receipt_date,
     remark: dialog.form.remark, items: buildItemsPayload()
   }
   if (!archiveOnly) {
     if (!payload.order_id) return ElMessage.warning('请选择关联采购订单')
     if (!payload.warehouse_id) return ElMessage.warning('请选择收货仓库')
+    if (!payload.actual_receipt_date) return ElMessage.warning('请人工明确填写实际收货日期，不从识别日期或录入时间推断')
     const missing = payload.items.filter((i) => !i.material_id)
     if (!payload.items.length) return ElMessage.warning('明细为空，无法生成到货单')
     if (missing.length) return ElMessage.warning('存在未匹配系统物料的明细，请先选择物料')

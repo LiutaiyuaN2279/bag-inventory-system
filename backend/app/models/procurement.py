@@ -73,6 +73,8 @@ class PurchaseArrival(Base):
     order_id = Column(Integer, ForeignKey("purchase_orders.id"), nullable=False)
     supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=False)
     status = Column(String(16), default="待验收")        # 待验收/已验收/已驳回
+    actual_receipt_date = Column(String(10), nullable=True)  # 人工声明实际收货日；旧记录不回填
+    inbound_posted_at = Column(DateTime, nullable=True)     # 实际过账记录时间，不回填业务日期
     reject_reason = Column(String(255), default="")      # 驳回原因
     remark = Column(String(255), default="")
     created_at = Column(DateTime, default=func.now())

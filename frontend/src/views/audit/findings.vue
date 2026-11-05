@@ -97,7 +97,7 @@
           <el-table-column prop="subject" label="涉及对象" min-width="240" show-overflow-tooltip />
           <el-table-column label="涉及金额(元)" width="132" align="right" class-name="col-num" sortable :sort-by="(r) => r.amount">
             <template #default="{ row }">
-              <span :class="{ 'amt-zero': !row.amount }">{{ row.amount ? '¥ ' + fmt(row.amount) : '—' }}</span>
+              <span :class="{ 'amt-zero': row.amount === 0 }">{{ row.amount == null ? '—' : '¥ ' + fmt(row.amount) }}</span>
             </template>
           </el-table-column>
           <el-table-column label="操作" width="88" align="center" fixed="right">
@@ -161,7 +161,7 @@
           <div class="fk-item">
             <div class="fk-label">涉及金额</div>
             <div class="fk-value fk-money">
-              {{ detail.data.amount ? '¥ ' + fmt(detail.data.amount) : '—' }}
+              {{ detail.data.amount == null ? '—' : '¥ ' + fmt(detail.data.amount) }}
             </div>
           </div>
           <div class="fk-item">
@@ -182,11 +182,26 @@
         </div>
         <el-empty v-else description="该发现暂无结构化证据条目" :image-size="52" />
 
-        <el-divider content-position="left">审计建议</el-divider>
+        <el-divider content-position="left">规则生成的核查建议</el-divider>
+        <p>以下建议由确定规则模板生成；未提供独立AI建议，未记录人工确认，不代表已批准审计结论。</p>
         <div class="fd-suggest">
           <el-icon class="sug-icon"><Opportunity /></el-icon>
           <span>{{ detail.data.suggestion || '—' }}</span>
         </div>
+
+        <template v-if="detail.data.traceability">
+          <el-divider content-position="left">当次冻结输入定位（待核实）</el-divider>
+          <p>运行版本：{{ detail.data.traceability.run_id || '—' }}；规则版本：{{ detail.data.traceability.rule_version || '—' }}</p>
+          <p v-for="(notice, i) in detail.data.traceability.limitations" :key="i">{{ notice }}</p>
+          <p>仍需核验的材料清单（未逐项核验，不表示材料实际不存在）：</p>
+          <p v-for="(item, i) in detail.data.traceability.review_checklist" :key="'check-'+i">{{ item }}</p>
+          <el-empty v-if="!detail.data.traceability.candidates.length" description="没有可定位的冻结候选行；不使用当前数据替代" :image-size="52" />
+          <div v-for="(source, i) in detail.data.traceability.candidates" :key="i" class="ev-item">
+            <span>冻结查询索引 {{ source.query_index }} / 行索引 {{ source.row_index }}（从0开始，仅单号匹配，尚未证明来源资格）</span>
+            <span>{{ source.fields }}</span>
+          </div>
+          <p v-if="detail.data.traceability.truncated">仅展示前20条候选定位，不能视为完整覆盖。</p>
+        </template>
 
         <template v-if="detail.data.procedure">
           <el-divider content-position="left">关联审计程序</el-divider>
