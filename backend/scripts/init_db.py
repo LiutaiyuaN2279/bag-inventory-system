@@ -4,7 +4,7 @@
     python scripts/init_db.py
 
 说明：本脚本是唯一创建 users 表记录的地方，必须最先执行；四个非 admin 演示账号
-建好后由 setup_roles.py 分别绑定 manager / buyer / keeper / qc 角色。
+由无顶层写库的 demo_roles 初始化绑定；已有账号及角色定制保持不变。
 """
 import sys
 import os
@@ -16,6 +16,7 @@ from sqlalchemy import select
 
 from app.core.database import Base, SessionLocal, engine
 from app.core.security import hash_password
+from app.services.demo_roles import initialize_demo_roles
 from app.models import (  # noqa: F401  触发模型注册
     Material,
     Permission,
@@ -65,50 +66,7 @@ def init():
     db = SessionLocal()
     try:
         print("[2/3] 初始化 RBAC ...")
-        # 权限
-        perm_map = {}
-        for code, name, module in PERMISSIONS:
-            p = db.execute(select(Permission).where(Permission.perm_code == code)).scalar_one_or_none()
-            if not p:
-                p = Permission(perm_code=code, perm_name=name, module=module)
-                db.add(p)
-                db.flush()
-            perm_map[code] = p.id
-
-        # 管理员角色
-        role = db.execute(select(Role).where(Role.role_code == "admin")).scalar_one_or_none()
-        if not role:
-            role = Role(role_code="admin", role_name="系统管理员", remark="拥有全部权限")
-            db.add(role)
-            db.flush()
-
-        # 角色-权限（全量）
-        for pid in perm_map.values():
-            exists = db.execute(
-                select(RolePermission).where(
-                    RolePermission.role_id == role.id, RolePermission.permission_id == pid
-                )
-            ).scalar_one_or_none()
-            if not exists:
-                db.add(RolePermission(role_id=role.id, permission_id=pid))
-
-        # 演示账号（统一口令 admin123）：admin 建好即绑定管理员角色，
-        # 其余四个账号的角色由 setup_roles.py 绑定（它按 username 查库，查不到就静默跳过）。
-        admin_user = None
-        for username, real_name in DEMO_USERS:
-            user = db.execute(select(User).where(User.username == username)).scalar_one_or_none()
-            if not user:
-                user = User(username=username, password_hash=hash_password(DEMO_PASSWORD),
-                            real_name=real_name, status=True)
-                db.add(user)
-                db.flush()
-            if username == "admin":
-                admin_user = user
-
-        if not db.execute(
-            select(UserRole).where(UserRole.user_id == admin_user.id, UserRole.role_id == role.id)
-        ).scalar_one_or_none():
-            db.add(UserRole(user_id=admin_user.id, role_id=role.id))
+        initialize_demo_roles(db, hash_password)
 
         print("[3/3] 初始化示例主数据 ...")
         # 示例供应商

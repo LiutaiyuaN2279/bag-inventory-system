@@ -5,6 +5,7 @@ export const qualityApi = {
   iqcDetail: (id) => request({ url: `/iqc/${id}`, method: 'get' }),
   iqcCreate: (data) => request({ url: '/iqc', method: 'post', data }),
   iqcCheck: (id, data) => request({ url: `/iqc/${id}/check`, method: 'post', data }),
+  iqcRelease: (id, data) => request({ url: `/iqc/${id}/release`, method: 'post', data }),
   fqcList: (params) => request({ url: '/fqc', method: 'get', params }),
   fqcCreate: (data) => request({ url: '/fqc', method: 'post', data }),
   fqcUpdate: (id, data) => request({ url: `/fqc/${id}`, method: 'put', data }),

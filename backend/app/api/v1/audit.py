@@ -16,6 +16,7 @@ from app.core.config import settings
 from app.core.exceptions import BizException
 from app.services.audit_assurance import legacy_assurance
 from app.services.audit_trial_archive import TrialArchive, TrialArchiveError
+from app.services.audit_traceability import explain_finding
 from app.utils.response import success
 
 def require_audit_contract(x_audit_contract: str | None = Header(None)):
@@ -146,9 +147,13 @@ def audit_finding_detail(finding_id: str, run_id: str | None = Query(None),
     for r in data["findings"]:
         if r["finding_id"] == finding_id:
             proc = next((p for p in data["procedures"] if p["code"] == r["rule_code"]), None)
-            return success({**r, "procedure": proc, "report_meta": data["report_meta"]})
+            try:
+                payload = trial_archive().read(data["report_meta"]["run_id"])
+            except TrialArchiveError as exc:
+                raise BizException(str(exc)) from exc
+            return success({**r, "procedure": proc, "report_meta": data["report_meta"],
+                            "traceability": explain_finding(payload, r)})
     # 编号不存在时按业务错误返回，前端拦截器会给出提示
-    from app.core.exceptions import BizException
     raise BizException(f"审计发现 {finding_id} 不存在")
 
 

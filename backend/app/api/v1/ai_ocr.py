@@ -461,7 +461,7 @@ def import_record(rid: int, data: OcrImport, db: Session = Depends(get_db),
                     "qualified_qty": i.qty, "warehouse_id": data.warehouse_id,
                 })
             note = data.remark or f"AI识别导入（{rec.doc_no or rec.image_name}）"
-            arr = build_arrival(db, data.order_id, arr_items, note)
+            arr = build_arrival(db, data.order_id, arr_items, note, data.actual_receipt_date)
             rec.arrival_id = arr.id
             arrival_no = arr.arrival_no
 

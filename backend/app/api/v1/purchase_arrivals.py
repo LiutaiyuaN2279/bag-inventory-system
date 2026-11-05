@@ -1,5 +1,6 @@
 """到货单：创建（回写订单到货数）→ 验收（触发采购入库，库存实时更新）。"""
 from fastapi import APIRouter, Body, Depends, Query
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.api._batch import run_batch_guarded
@@ -12,11 +13,13 @@ from app.models.procurement import (
     PurchaseArrival, PurchaseArrivalItem, PurchaseOrderItem,
 )
 from app.models.rbac import User
+from app.models.quality import IqcOrder
 from app.crud.crud_base import apply_ordering
 from app.schemas.batch import BatchIn
 from app.schemas.procurement import ArrivalCreate
 from app.services.arrival_service import create_arrival as build_arrival, round_qty
 from app.services.stock_service import post_inbound
+from app.services.quality_release import require_released_arrival
 from app.utils.response import page_result, success
 from app.api.v1.purchase_orders import refresh_order_status
 
@@ -28,6 +31,8 @@ def _row_dict(r, sups):
         "id": r.id, "arrival_no": r.arrival_no, "order_id": r.order_id,
         "supplier_id": r.supplier_id, "supplier_name": sups.get(r.supplier_id, ""),
         "status": r.status, "reject_reason": r.reject_reason, "remark": r.remark, "created_at": str(r.created_at)[:19],
+        "actual_receipt_date": r.actual_receipt_date,
+        "inbound_posted_at": r.inbound_posted_at,
     }
 
 
@@ -42,6 +47,7 @@ def _do_approve(db: Session, arr: PurchaseArrival, operator: str) -> None:
     """验收核心逻辑：逐明细采购入库 + 回写订单明细入库数 + 刷新订单状态（不 commit）。"""
     if arr.status != "待验收":
         raise BizException("仅待验收单据可验收")
+    require_released_arrival(db, arr)
     items = db.query(PurchaseArrivalItem).filter(PurchaseArrivalItem.arrival_id == arr.id).all()
     for it in items:
         if it.qualified_qty > 0:
@@ -54,6 +60,7 @@ def _do_approve(db: Session, arr: PurchaseArrival, operator: str) -> None:
             if oi:
                 oi.inbound_qty = (oi.inbound_qty or 0) + it.qualified_qty
     arr.status = "已验收"
+    arr.inbound_posted_at = datetime.now(timezone.utc)
     refresh_order_status(db, arr.order_id)
 
 
@@ -63,6 +70,9 @@ def _do_reject(db: Session, arr: PurchaseArrival, reason: str) -> None:
         raise BizException("仅待验收单据可驳回")
     if not (reason or "").strip():
         raise BizException("请填写驳回原因")
+    if any(q.inspection_recorded_at or q.status in ("合格", "不合格", "让步接收") or q.release_status == "已放行"
+           for q in db.query(IqcOrder).filter_by(arrival_id=arr.id)):
+        raise BizException("已经存在最终质量结论，本批不支持以登记驳回撤回检验或质量放行")
     items = db.query(PurchaseArrivalItem).filter(PurchaseArrivalItem.arrival_id == arr.id).all()
     _mu = {m.id: (m.unit or '') for m in db.query(Material).all()}
     # 回滚创建到货单时回写到订单明细的到货数，避免驳回后累计到货仍被计入
@@ -145,7 +155,7 @@ def create_arrival(data: ArrivalCreate, db: Session = Depends(get_db),
                    _=Depends(require_permissions("purchase:arrival:add"))):
     _, _, sups = load_maps(db)
     try:
-        arr = build_arrival(db, data.order_id, data.items, data.remark)
+        arr = build_arrival(db, data.order_id, data.items, data.remark, data.actual_receipt_date)
         db.commit()
     except Exception:
         db.rollback()

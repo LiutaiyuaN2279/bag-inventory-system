@@ -235,7 +235,9 @@ def seed_procurement(db):
                                            unit=m.unit, ordered_qty=random.randint(0, 100),
                                            requirement_date=(TODAY + timedelta(days=random.randint(-10, 30))).date().isoformat()))
 
-    # 采购订单 70
+    # 采购订单 70；到货单随订单生成，累计数与有效单据逐明细对应。
+    # 库存仍由 seed_inventory_and_history 独立生成，本段不模拟真实验收入库。
+    whs = [w.id for w in db.query(Warehouse).limit(4).all()]
     for _ in range(70):
         sid = random.choice(sups)
         total = 0
@@ -249,30 +251,27 @@ def seed_procurement(db):
                            status=random.choice(["已审核", "已完成", "已完成", "部分到货", "草稿"]),
                            total_amount=round(total, 2), created_at=TODAY - timedelta(days=random.randint(0, 120)))
         db.add(po); db.flush()
+        arr = None
+        if po.status in ("部分到货", "已完成"):
+            arrival_status = "已验收" if po.status == "已完成" else random.choice(["已验收", "待验收"])
+            # 日期只落在订单创建日至今天之间，不制造先到货后下单的正常样本。
+            arr = PurchaseArrival(arrival_no=seq_no("AR"), order_id=po.id, supplier_id=sid,
+                                  status=arrival_status,
+                                  created_at=po.created_at + timedelta(
+                                      days=random.randint(0, (TODAY - po.created_at).days)))
+            db.add(arr); db.flush()
         for m, qty, price in items:
-            arrived = random.randint(0, qty) if po.status in ("部分到货", "已完成") else 0
-            inbound = arrived if po.status == "已完成" else (arrived if random.random() < 0.7 else max(0, arrived - random.randint(0, 50)))
-            db.add(PurchaseOrderItem(order_id=po.id, material_id=m.id, qty=qty, unit_price=price,
-                                     unit=m.unit, arrived_qty=arrived, inbound_qty=inbound))
-
-    # 到货单 55（带明细，库存已由 seed_inventory 统一生成，此处仅做单据记录）
-    # 每张到货单挂一张「不同的」采购订单：原实现每轮都取最新一张非草稿订单，
-    # 结果 55 张到货单全是同一供应商、同一批明细，到货页供应商列因此整列重复。
-    whs = [w.id for w in db.query(Warehouse).limit(4).all()]
-    pos = db.query(PurchaseOrder).filter(PurchaseOrder.status != "草稿").all()
-    random.shuffle(pos)
-    for po in pos[:55]:
-        items = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.order_id == po.id).all()
-        if not items:
-            continue
-        arr = PurchaseArrival(arrival_no=seq_no("AR"), order_id=po.id, supplier_id=po.supplier_id,
-                              status=random.choice(["已验收", "已验收", "待验收"]),
-                              created_at=TODAY - timedelta(days=random.randint(0, 90)))
-        db.add(arr); db.flush()
-        for oi in items:
-            db.add(PurchaseArrivalItem(arrival_id=arr.id, order_item_id=oi.id, material_id=oi.material_id,
-                                       arrived_qty=oi.arrived_qty, qualified_qty=oi.inbound_qty,
-                                       warehouse_id=random.choice(whs)))
+            arrived = qty if po.status == "已完成" else (
+                random.randint(1, qty - 1) if po.status == "部分到货" else 0)
+            inbound = arrived if arr and arr.status == "已验收" else 0
+            oi = PurchaseOrderItem(order_id=po.id, material_id=m.id, qty=qty, unit_price=price,
+                                   unit=m.unit, arrived_qty=arrived, inbound_qty=inbound)
+            db.add(oi); db.flush()
+            if arr:
+                # 待验收可预填合格数，但不能据此增加订单累计入库数。
+                db.add(PurchaseArrivalItem(arrival_id=arr.id, order_item_id=oi.id, material_id=m.id,
+                                           arrived_qty=arrived, qualified_qty=arrived,
+                                           warehouse_id=random.choice(whs)))
 
     # 采购退货 18
     for _ in range(18):

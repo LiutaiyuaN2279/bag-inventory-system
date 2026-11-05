@@ -20,6 +20,7 @@ class OcrImport(_Flex):
     supplier_id: Optional[int] = None
     order_id: Optional[int] = None
     warehouse_id: Optional[int] = None
+    actual_receipt_date: Optional[str] = None  # 仅生成到货时由人明确声明，不从OCR日期推断
     remark: str = ""
     items: list[dict] = Field(default_factory=list)  # {id?, material_id, spec, unit, qty}
 

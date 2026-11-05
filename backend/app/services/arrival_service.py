@@ -23,7 +23,9 @@ def round_qty(qty, unit):
     return round(float(qty or 0), 2)
 
 
-def create_arrival(db: Session, order_id: int, items: list, remark: str = "") -> PurchaseArrival:
+def create_arrival(db: Session, order_id: int, items: list, remark: str = "", actual_receipt_date=None) -> PurchaseArrival:
+    from app.services.quality_release import declared_date
+    receipt_date = declared_date(actual_receipt_date, "实际收货日")
     order = db.get(PurchaseOrder, order_id)
     if not order:
         raise BizException("采购订单不存在")
@@ -68,7 +70,8 @@ def create_arrival(db: Session, order_id: int, items: list, remark: str = "") ->
         raise BizException("到货数量不能全为 0，请填写实际到货数")
 
     arr = PurchaseArrival(arrival_no=gen_no("AR"), order_id=order_id,
-                          supplier_id=order.supplier_id, remark=remark, status="待验收")
+                          supplier_id=order.supplier_id, remark=remark, status="待验收",
+                          actual_receipt_date=receipt_date.isoformat())
     db.add(arr)
     db.flush()
     for it, oi, unit, arrived, qualified in plan:

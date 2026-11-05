@@ -13,6 +13,15 @@ class IqcOrder(Base):
     supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=True)
     arrival_id = Column(Integer, nullable=True, index=True)      # 关联到货单
     status = Column(String(16), default="待检")                  # 待检/合格/不合格/让步接收
+    inspection_date = Column(String(10), nullable=True)
+    inspected_by = Column(Integer, nullable=True)
+    inspection_recorded_at = Column(DateTime, nullable=True)
+    release_status = Column(String(16), default="未放行")
+    release_date = Column(String(10), nullable=True)
+    released_by = Column(Integer, nullable=True)
+    release_recorded_at = Column(DateTime, nullable=True)
+    release_basis = Column(Text, default="")
+    arrival_binding = Column(Text, nullable=True)  # 新记录冻结到货内容绑定，旧空不授信
     inspector = Column(String(64), default="")
     remark = Column(String(255), default="")
     created_at = Column(DateTime, default=func.now())
@@ -24,6 +33,9 @@ class IqcItem(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     iqc_id = Column(Integer, ForeignKey("iqc_orders.id"), nullable=False, index=True)
     material_id = Column(Integer, ForeignKey("materials.id"), nullable=False)
+    arrival_item_id = Column(Integer, ForeignKey("purchase_arrival_items.id"), nullable=True)
+    accepted_qty = Column(Float, nullable=True)  # 人员明确整批允许接收量，不由抽检数推导
+    released_qty = Column(Float, nullable=True)  # 独立质量放行量
     sample_qty = Column(Float, default=0)       # 抽检数
     qualified_qty = Column(Float, default=0)    # 合格数
     result = Column(String(16), default="待检")  # 合格/不合格/让步接收

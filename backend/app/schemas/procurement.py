@@ -37,6 +37,7 @@ class OrderUpdate(_Flex):
 
 class ArrivalCreate(_Flex):
     order_id: int
+    actual_receipt_date: str
     remark: str = ""
     items: list[dict] = Field(default_factory=list)  # {order_item_id, arrived_qty, qualified_qty, warehouse_id, location_id, color_batch_id}
 
