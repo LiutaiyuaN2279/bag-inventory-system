@@ -10,7 +10,7 @@ test('concurrent initial queries use a single frozen run', async () => {
     return { report_meta: { run_id: req.params?.run_id || 'first' } }
   })
   await Promise.all([api.procedures(), api.findings(), api.workpaper()])
-  assert.equal(calls.filter(c => !c.params?.run_id).length, 2)
+  assert.equal(calls.filter(c => !c.params?.run_id).length, 1)
   assert.ok(calls.filter(c => c.url !== '/audit/report').every(c => c.params.run_id === 'first'))
   assert.ok(calls.every(c => c.headers['X-Audit-Contract'] === 'b002-p0-v1'))
 })
